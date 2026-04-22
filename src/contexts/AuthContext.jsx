@@ -2,9 +2,11 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
+  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
 } from 'firebase/auth'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
@@ -45,6 +47,20 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
+    async function resolveRedirectSignIn() {
+      try {
+        const redirectResult = await getRedirectResult(auth)
+        if (redirectResult?.user) {
+          const userProfile = await ensureUserProfile(redirectResult.user)
+          setProfile(userProfile)
+        }
+      } catch (error) {
+        console.error('Redirect sign-in completion failed:', error)
+      }
+    }
+
+    resolveRedirectSignIn()
+
     const unsubscribe = onAuthStateChanged(
       auth,
       async (user) => {
@@ -118,10 +134,25 @@ export function AuthProvider({ children }) {
   const login = (email, password) => signInWithEmailAndPassword(auth, email, password)
 
   const signInWithGoogle = async () => {
-    const credentials = await signInWithPopup(auth, googleProvider)
-    const userProfile = await ensureUserProfile(credentials.user)
-    setProfile(userProfile)
-    return credentials.user
+    try {
+      const credentials = await signInWithPopup(auth, googleProvider)
+      const userProfile = await ensureUserProfile(credentials.user)
+      setProfile(userProfile)
+      return credentials.user
+    } catch (error) {
+      const shouldFallbackToRedirect =
+        error?.code === 'auth/popup-blocked' ||
+        error?.code === 'auth/popup-closed-by-user' ||
+        error?.code === 'auth/cancelled-popup-request' ||
+        error?.code === 'auth/operation-not-supported-in-this-environment'
+
+      if (shouldFallbackToRedirect) {
+        await signInWithRedirect(auth, googleProvider)
+        return null
+      }
+
+      throw error
+    }
   }
 
   const logout = () => signOut(auth)
