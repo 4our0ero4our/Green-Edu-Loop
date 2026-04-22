@@ -1,5 +1,7 @@
 import { Bot, BookOpen, SendHorizonal, Target } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
+import { getEcoAssistantReply, getOfflineEcoReply } from '../lib/ai'
 
 const sdgCards = [
   {
@@ -25,33 +27,40 @@ const tips = [
   'Flatten plastic bottles to save bin space and improve collection efficiency.',
 ]
 
-function getBotReply(message) {
-  const lowered = message.toLowerCase()
-
-  if (lowered.includes('plastic')) {
-    return 'Plastic items like bottles should be rinsed and placed in the Blue recycling bin. They earn you 10 points!'
-  }
-  if (lowered.includes('glass')) {
-    return 'Glass bottles and jars go in the Green bin. Be careful not to break them! They earn you 15 points!'
-  }
-  return "I'm your Eco Assistant! Ask me how to recycle plastic, glass, or general waste."
-}
-
 export default function LearnPage() {
   const [messages, setMessages] = useState([
     {
       from: 'bot',
-      text: "I'm your Eco Assistant! Ask me how to recycle plastic, glass, or general waste.",
+      text: "I'm your Eco Assistant. Ask me anything about recycling and waste sorting.",
     },
   ])
   const [input, setInput] = useState('')
+  const [isSending, setIsSending] = useState(false)
 
-  const sendMessage = () => {
-    if (!input.trim()) return
-    const userMessage = { from: 'user', text: input.trim() }
-    const botMessage = { from: 'bot', text: getBotReply(input.trim()) }
-    setMessages((previous) => [...previous, userMessage, botMessage])
+  const sendMessage = async () => {
+    const trimmedMessage = input.trim()
+    if (!trimmedMessage || isSending) return
+
+    const userMessage = { from: 'user', text: trimmedMessage }
+    setMessages((previous) => [...previous, userMessage])
     setInput('')
+    setIsSending(true)
+
+    try {
+      const reply = await getEcoAssistantReply(trimmedMessage)
+      setMessages((previous) => [...previous, { from: 'bot', text: reply }])
+    } catch (error) {
+      toast.error(error.message || 'AI assistant unavailable.')
+      setMessages((previous) => [
+        ...previous,
+        {
+          from: 'bot',
+          text: `${getOfflineEcoReply(trimmedMessage)} (Offline fallback reply)`,
+        },
+      ])
+    } finally {
+      setIsSending(false)
+    }
   }
 
   return (
@@ -112,15 +121,18 @@ export default function LearnPage() {
               if (event.key === 'Enter') sendMessage()
             }}
             placeholder="Ask about plastic, glass, or waste..."
+            disabled={isSending}
             className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-eco-500 focus:outline-none"
           />
           <button
             onClick={sendMessage}
-            className="rounded-xl bg-eco-600 p-2.5 text-white transition hover:bg-eco-700"
+            disabled={isSending}
+            className="rounded-xl bg-eco-600 p-2.5 text-white transition hover:bg-eco-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <SendHorizonal className="h-4 w-4" />
           </button>
         </div>
+        {isSending ? <p className="mt-2 text-xs text-slate-500">Eco Assistant is thinking...</p> : null}
       </section>
     </div>
   )

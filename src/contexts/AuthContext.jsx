@@ -1,8 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   createUserWithEmailAndPassword,
+  GoogleAuthProvider,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
 } from 'firebase/auth'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
@@ -12,9 +14,35 @@ import { fetchUserProfile } from '../lib/firestore'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
+  const googleProvider = new GoogleAuthProvider()
   const [currentUser, setCurrentUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+
+  const ensureUserProfile = async (user, fallbackName = 'Eco Hero') => {
+    const fallbackProfile = {
+      uid: user.uid,
+      name: user.displayName ?? fallbackName,
+      email: user.email,
+      totalPoints: 0,
+    }
+
+    try {
+      const existingProfile = await fetchUserProfile(user.uid)
+      if (existingProfile) return existingProfile
+
+      const profilePayload = {
+        ...fallbackProfile,
+        createdAt: serverTimestamp(),
+      }
+
+      await setDoc(doc(db, 'users', user.uid), profilePayload, { merge: true })
+      return fallbackProfile
+    } catch (error) {
+      console.error('Ensuring user profile failed:', error)
+      return fallbackProfile
+    }
+  }
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(
@@ -24,15 +52,8 @@ export function AuthProvider({ children }) {
           setCurrentUser(user)
 
           if (user) {
-            const userProfile = await fetchUserProfile(user.uid)
-            setProfile(
-              userProfile ?? {
-                uid: user.uid,
-                name: user.displayName ?? 'Eco Hero',
-                email: user.email,
-                totalPoints: 0,
-              }
-            )
+            const userProfile = await ensureUserProfile(user)
+            setProfile(userProfile)
           } else {
             setProfile(null)
           }
@@ -67,24 +88,22 @@ export function AuthProvider({ children }) {
     const credentials = await createUserWithEmailAndPassword(auth, email, password)
     const user = credentials.user
 
-    await setDoc(doc(db, 'users', user.uid), {
-      uid: user.uid,
-      name,
-      email: user.email,
-      totalPoints: 0,
-      createdAt: serverTimestamp(),
-    })
+    try {
+      await setDoc(doc(db, 'users', user.uid), {
+        uid: user.uid,
+        name,
+        email: user.email,
+        totalPoints: 0,
+        createdAt: serverTimestamp(),
+      })
+    } catch (error) {
+      // Account creation succeeded; keep user signed in even if profile write fails.
+      console.error('Initial profile write failed during signup:', error)
+    }
 
     try {
-      const userProfile = await fetchUserProfile(user.uid)
-      setProfile(
-        userProfile ?? {
-          uid: user.uid,
-          name,
-          email: user.email,
-          totalPoints: 0,
-        }
-      )
+      const userProfile = await ensureUserProfile(user, name)
+      setProfile(userProfile)
     } catch (error) {
       console.error('Signup profile fetch failed:', error)
       setProfile({
@@ -97,6 +116,13 @@ export function AuthProvider({ children }) {
   }
 
   const login = (email, password) => signInWithEmailAndPassword(auth, email, password)
+
+  const signInWithGoogle = async () => {
+    const credentials = await signInWithPopup(auth, googleProvider)
+    const userProfile = await ensureUserProfile(credentials.user)
+    setProfile(userProfile)
+    return credentials.user
+  }
 
   const logout = () => signOut(auth)
 
@@ -124,6 +150,7 @@ export function AuthProvider({ children }) {
       isLoading,
       signup,
       login,
+      signInWithGoogle,
       logout,
       refreshProfile,
     }),
