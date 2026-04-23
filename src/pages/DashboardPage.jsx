@@ -33,7 +33,7 @@ export default function DashboardPage() {
     <div className="space-y-4 pb-2">
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <p className="text-sm text-slate-500">Hello, {profile?.name ?? 'Eco Hero'} 👋</p>
-        <h2 className="mt-1 text-xl font-semibold text-slate-900">Ready to make today greener?</h2>
+        <h2 className="mt-1 text-xl font-semibold text-slate-900">SAMAD DON REACH HERE</h2>
 
         <div className="mt-4 rounded-2xl bg-gradient-to-r from-eco-600 to-eco-700 p-4 text-white">
           <div className="flex items-center justify-between">
